@@ -38,3 +38,52 @@ fitFwd <- regsubsets(Salary~., Hitters, nvmax = 19, method = "forward")
 summary(fitFwd)
 fitBwd <- regsubsets(Salary~., Hitters, nvmax = 19, method = "backward")
 summary(fitBwd)
+
+
+## Choosing models with CV
+# I will use the validation set approach to choose the best model
+set.seed(1)
+train <- sample(c(T,F), nrow(Hitters), rep = T)
+test <- !train
+
+best <- regsubsets(Salary~., data = Hitters[train,], nvmax = 19)
+
+# To select the best fit I will start by creating an X matrix from the model data
+mtrx <- model.matrix(Salary~., data = Hitters[test,])
+
+# Now I run a loop and I extract the coefficients for the best model of that size
+errors <- rep(NA, 19)
+for(i in 1:19){
+    coefi <- coef(best, id = i)
+    pred <- mtrx[,names(coefi)]%*%coefi
+    errors[i] <- mean((Hitters$Salary[test]-pred)^2)
+}
+
+coef(best, 10)
+
+###### Since there is no predict() method for regsubsets() I will write my own predict function
+pred_regsubsets <- function(object, newdata, id, ...){
+    form <- as.formula(object$call[[2]])
+    mat <- model.matrix(form, newdata)
+    coefi <- coef(object, id = id)
+    xvars <- names(coefi)
+    mat[,xvars]%*%coefi
+}
+
+# Now i will do k-folds cross-validation
+k <- 10
+set.seed(1)
+folds <- sample(1:k, nrow(Hitters), replace = TRUE)
+errors <- matrix(NA, k, 19, dimnames = list(NULL, paste(1:19)))
+
+for(j in 1:k){
+    best <- regsubsets(Salary~., Hitters[folds != j,], nvmax = 19)
+    for(i in 1:19){
+        pred <- pred_regsubsets(best, Hitters[folds == j,], id = i)
+        errors[j,i] <- mean((Hitters$Salary[folds == j] - pred)^2)
+    }
+}
+
+mean_errors <- apply(errors, 2, mean)
+par(mfrow = c(1,1))
+plot(mean_errors, type = "b")
