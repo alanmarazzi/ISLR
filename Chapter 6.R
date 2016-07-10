@@ -87,3 +87,78 @@ for(j in 1:k){
 mean_errors <- apply(errors, 2, mean)
 par(mfrow = c(1,1))
 plot(mean_errors, type = "b")
+
+#### Ridge Regression and Lasso 
+# I will use the glmnet package with the glmnet() function to perform ridge and lasso regression. It works differently than glm(): I need to feed glmnet() with a matrix and a vector without giving it the formula.
+library(glmnet)
+x <- model.matrix(Salary~., Hitters)[,-1]
+y <- Hitters$Salary
+
+# model.matrix() is really useful because it autoamtically turns factors into dummy values and glnet() can take only numeric values
+
+### Ridge Regression
+# With alpha = 0|1 I can decide to fit a ridge or a lasso regression
+grid <- 10^seq(10, -2, length = 100)
+ridge <- glmnet(x, y, alpha = 0, lambda = grid)
+
+# glmnet() has default values for lambda, but here I fit lambda from 10^10 to 10^-2 covering the full range of scenarios from the null model.
+# Note that glmnet() standardizes the variables per default. In case I don't want that I have to set standardize = FALSE
+dim(coef(ridge))
+
+# I can access single results
+ridge$lambda[50]
+coef(ridge)[,50]
+coef(ridge)[,60]
+
+# I can use the predict function for many purposes, for instance I can also try a new lambda
+predict(ridge, s = 50, type = "coefficients")[1:20,]
+
+# Validation set approach
+set.seed(1)
+train <- sample(1:nrow(x), nrow(x)/2)
+test <- (-train)
+yTest <- y[test]
+
+ridge <- glmnet(x[train,], y[train], alpha = 0, lambda = grid, thresh = 1e-12)
+pred <- predict(ridge, s = 4, newx = x[test, ])
+# MSE
+mean((pred-yTest)^2)
+
+# Let's try with a higher lambda
+pred <- predict(ridge, s = 1e10, newx = x[test, ])
+mean((pred-yTest)^2)
+
+# Compare ridge regression with least squares
+pred <- predict(ridge, s = 0, newx = x[test,], exact = T)
+mean((pred-yTest)^2)
+
+# The better approach is to use cross validation
+set.seed(1)
+cv <- cv.glmnet(x[train,], y[train], alpha = 0)
+plot(cv)
+best <- cv$lambda.min
+best
+pred <- predict(ridge, s = best, newx = x[test,])
+mean((pred-yTest)^2)
+
+# So I will go wit lambda = 212
+out <- glmnet(x,y,alpha=0)
+predict(out, type = "coefficients", s = best)
+
+
+#### The Lasso
+# I will always use glmnet() but with alpha = 1
+lasso <- glmnet(x[train,], y[train], alpha = 1, lambda = grid)
+plot(lasso)
+
+# Cross Validation
+set.seed(1)
+cv <- cv.glmnet(x[train,], y[train], alpha = 1)
+plot(cv)
+best <- cv$lambda.min
+pred <- predict(lasso, s = best, newx = x[test,])
+mean((pred-yTest)^2)
+
+# The result is similar to ridge, though is higher lasso has put to 0 many variables simplyfying the model
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+predict(out, type = "coefficients", s = best)[1:20,]
